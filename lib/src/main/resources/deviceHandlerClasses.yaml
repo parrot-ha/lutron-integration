@@ -1,0 +1,4 @@
+- id: d3f6cc20-9887-48c7-8bd9-ebbd229178c4
+  className: com.parrotha.lutron.device.LutronSwitch
+- id: 85fe9959-f39e-4f88-90be-b6158acad91a
+  className: com.parrotha.lutron.device.LutronDimmer
