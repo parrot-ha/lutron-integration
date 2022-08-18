@@ -96,14 +96,14 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 tc.getOutputStream().write("lutron\n".getBytes(StandardCharsets.UTF_8));
                 tc.getOutputStream().flush();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.warn("Exception during login", e);
             }
         } else if (input.trim().equals("password:")) {
             try {
                 tc.getOutputStream().write("integration\n".getBytes(StandardCharsets.UTF_8));
                 tc.getOutputStream().flush();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.warn("Exception during password", e);
             }
         } else {
             if (input.length() > 0) {
@@ -131,7 +131,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 tc.connect(bridgeAddress, 23);
                 running = true;
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.warn("Exception connecting to bridge", e);
             }
         }
     }
@@ -150,7 +150,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 }
             }
         } catch (final IOException e) {
-            System.err.println("Exception while reading socket:" + e.getMessage());
+            logger.warn("Exception while reading socket", e);
         }
         return null;
     }
@@ -164,7 +164,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 tc.disconnect();
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.warn("Exception disconnecting", e);
         }
     }
 
@@ -231,7 +231,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 tc.getOutputStream().flush();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.warn("Exception processing action", e);
         }
         return null;
     }
