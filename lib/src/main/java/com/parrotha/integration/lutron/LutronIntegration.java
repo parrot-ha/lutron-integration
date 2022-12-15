@@ -35,13 +35,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class LutronIntegration extends DeviceIntegration implements TelnetInputListener, ItemAddIntegrationExtension, ItemListIntegrationExtension {
     private static final Logger logger = LoggerFactory.getLogger(LutronIntegration.class);
 
     private TelnetClient tc;
-
     private boolean running = false;
+    private Timer watchdog = null;
+    private long lastMessage = -1;
+    // 5 minutes
+    private final long watchdogPeriod = 5 * 60 * 1000;
 
     private static final List<String> tags = List.of("LUTRON");
 
@@ -91,6 +96,10 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
         if (input == null) {
             return;
         }
+        if (logger.isDebugEnabled()) {
+            logger.debug("Got message " + input);
+        }
+        lastMessage = System.currentTimeMillis();
         if (input.trim().equals("login:")) {
             try {
                 tc.getOutputStream().write("lutron\n".getBytes(StandardCharsets.UTF_8));
@@ -130,10 +139,42 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
             try {
                 tc.connect(bridgeAddress, 23);
                 running = true;
+                startWatchdog();
             } catch (IOException e) {
                 logger.warn("Exception connecting to bridge", e);
             }
         }
+    }
+
+    private void startWatchdog() {
+        TimerTask tt = new TimerTask() {
+            @Override
+            public void run() {
+                if (tc == null || !tc.isConnected()) {
+                    logger.warn("restarting Lutron integration because not connected");
+                    new Thread(() -> {
+                        stop();
+                        start();
+                    }).start();
+                }
+                long currentTime = System.currentTimeMillis();
+                if ((currentTime - lastMessage - 100) > watchdogPeriod) {
+                    if ((currentTime - lastMessage - 100) > watchdogPeriod * 3) {
+                        logger.warn("Restarting Lutron integration because no response ");
+                        // we have missed 3 watchdog periods, restart
+                        new Thread(() -> {
+                            stop();
+                            start();
+                        }).start();
+                    } else {
+                        // send message
+                        sendMessage("?SYSTEM,10");
+                    }
+                }
+            }
+        };
+        watchdog = new Timer(this.getId() + "_watchdog");
+        watchdog.scheduleAtFixedRate(tt, 60000, watchdogPeriod);
     }
 
     private String readInput() {
@@ -159,9 +200,14 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     public void stop() {
         try {
             running = false;
+            if (watchdog != null) {
+                watchdog.cancel();
+                watchdog = null;
+            }
             if (tc != null) {
                 tc.unregisterInputListener();
                 tc.disconnect();
+                tc = null;
             }
         } catch (Exception e) {
             logger.warn("Exception disconnecting", e);
@@ -225,14 +271,20 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
 
     @Override
     public HubResponse processAction(HubAction hubAction) {
+        sendMessage(hubAction.getAction());
+        return null;
+    }
+
+    private void sendMessage(String message) {
         try {
             if (tc != null && tc.getOutputStream() != null) {
-                tc.getOutputStream().write((hubAction.getAction() + "\r\n").getBytes(StandardCharsets.UTF_8));
+                tc.getOutputStream().write((message + "\r\n").getBytes(StandardCharsets.UTF_8));
                 tc.getOutputStream().flush();
+            } else {
+                logger.warn("Attempting to send message to Lutron bridge and connection is not available");
             }
         } catch (IOException e) {
             logger.warn("Exception processing action", e);
         }
-        return null;
     }
 }
