@@ -2,7 +2,7 @@ id: 89fc4a9a-3a0d-43b8-a888-b9cae06d784e
 name: Lutron Bridge Extension
 minHubVersion: 0.3.0
 author: Parrot HA
-version: 0.0.2
+version: 0.0.3
 licenseFile: TBD
 releaseNotes: TBD
 description: Lutron Bridge integration for Parrot Home Automation Hub
