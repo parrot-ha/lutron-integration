@@ -47,7 +47,9 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     private long lastMessage = -1;
     // 5 minutes
     private final long watchdogPeriod = 5 * 60 * 1000;
-
+    private final long DEFAULT_WATCHDOG_BACKOFF_PERIOD = 5000;
+    private final long MAX_WATCHDOG_BACKOFF_PERIOD = 10 * 60 * 1000;
+    private long currentWatchdogBackoffPeriod = DEFAULT_WATCHDOG_BACKOFF_PERIOD;
     private static final List<String> tags = List.of("LUTRON");
 
     @Override
@@ -100,6 +102,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
             logger.debug("Got message " + input);
         }
         lastMessage = System.currentTimeMillis();
+
         if (input.trim().equals("login:")) {
             try {
                 tc.getOutputStream().write("lutron\n".getBytes(StandardCharsets.UTF_8));
@@ -133,16 +136,36 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     public void start() {
         String bridgeAddress = getSettingAsString("bridgeAddress");
         if (bridgeAddress != null && bridgeAddress.length() > 0) {
+            running = true;
+            startConnection();
+            startWatchdog();
+        }
+    }
+
+    private void startConnection() {
+        String bridgeAddress = getSettingAsString("bridgeAddress");
+        if (bridgeAddress != null && bridgeAddress.length() > 0) {
             tc = new TelnetClient("VT100");
             tc.registerInputListener(this);
 
             try {
                 tc.connect(bridgeAddress, 23);
-                running = true;
-                startWatchdog();
             } catch (IOException e) {
                 logger.warn("Exception connecting to bridge", e);
             }
+        }
+    }
+
+    private void backoffWatchdog() {
+        try {
+            logger.warn("Waiting to restart Lutron integration for {} ms", currentWatchdogBackoffPeriod);
+            Thread.sleep(currentWatchdogBackoffPeriod);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        currentWatchdogBackoffPeriod = currentWatchdogBackoffPeriod * 2;
+        if (currentWatchdogBackoffPeriod > MAX_WATCHDOG_BACKOFF_PERIOD) {
+            currentWatchdogBackoffPeriod = MAX_WATCHDOG_BACKOFF_PERIOD;
         }
     }
 
@@ -151,24 +174,29 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
             @Override
             public void run() {
                 if (tc == null || !tc.isConnected()) {
+                    backoffWatchdog();
                     logger.warn("restarting Lutron integration because not connected");
                     new Thread(() -> {
-                        stop();
-                        start();
+                        stopConnection();
+                        startConnection();
                     }).start();
-                }
-                long currentTime = System.currentTimeMillis();
-                if ((currentTime - lastMessage - 100) > watchdogPeriod) {
-                    if ((currentTime - lastMessage - 100) > watchdogPeriod * 3) {
-                        logger.warn("Restarting Lutron integration because no response ");
-                        // we have missed 3 watchdog periods, restart
-                        new Thread(() -> {
-                            stop();
-                            start();
-                        }).start();
+                } else {
+                    long currentTime = System.currentTimeMillis();
+                    if ((currentTime - lastMessage - 100) > watchdogPeriod) {
+                        if ((currentTime - lastMessage - 100) > watchdogPeriod * 3) {
+                            backoffWatchdog();
+                            logger.warn("Restarting Lutron integration because no response ");
+                            // we have missed 3 watchdog periods, restart
+                            new Thread(() -> {
+                                stopConnection();
+                                startConnection();
+                            }).start();
+                        } else {
+                            // send message
+                            sendMessage("?SYSTEM,10");
+                        }
                     } else {
-                        // send message
-                        sendMessage("?SYSTEM,10");
+                        currentWatchdogBackoffPeriod = DEFAULT_WATCHDOG_BACKOFF_PERIOD;
                     }
                 }
             }
@@ -198,12 +226,17 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
 
     @Override
     public void stop() {
+        running = false;
+        if (watchdog != null) {
+            watchdog.cancel();
+            watchdog = null;
+        }
+        stopConnection();
+    }
+
+    private void stopConnection() {
         try {
             running = false;
-            if (watchdog != null) {
-                watchdog.cancel();
-                watchdog = null;
-            }
             if (tc != null) {
                 tc.unregisterInputListener();
                 tc.disconnect();
@@ -265,7 +298,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     }
 
     @Override
-    public boolean removeIntegrationDevice(String deviceNetworkId) {
+    public boolean removeIntegrationDevice(String deviceNetworkId, boolean force) {
         return true;
     }
 
