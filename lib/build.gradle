@@ -14,7 +14,7 @@ plugins {
     id "com.github.hierynomus.license" version "0.15.0"
 }
 
-version '0.0.3'
+version '0.0.4'
 
 distributions {
     main {
@@ -51,8 +51,8 @@ compileGroovy {
 
 dependencies {
     // the following will be provided by the parrot-hub classpath at runtime.
-    compileOnly 'com.parrotha:parrothub-core:0.3.0'
-    compileOnly 'com.parrotha:parrothub-integration-common:0.3.0'
+    compileOnly 'com.parrotha:parrothub-core:0.4.1'
+    compileOnly 'com.parrotha:parrothub-integration-common:0.4.1'
 
     compileOnly "org.codehaus.groovy:groovy-all:3.0.9"
     compileOnly 'org.codehaus.groovy:groovy-json:3.0.9'
