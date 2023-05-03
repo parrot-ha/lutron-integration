@@ -21,6 +21,7 @@ package com.parrotha.integration.lutron;
 import com.parrotha.device.HubAction;
 import com.parrotha.device.HubResponse;
 import com.parrotha.integration.DeviceIntegration;
+import com.parrotha.integration.device.DeviceMessageEvent;
 import com.parrotha.integration.extension.ItemAddIntegrationExtension;
 import com.parrotha.integration.extension.ItemListIntegrationExtension;
 import com.parrotha.ui.PreferencesBuilder;
@@ -37,6 +38,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 public class LutronIntegration extends DeviceIntegration implements TelnetInputListener, ItemAddIntegrationExtension, ItemListIntegrationExtension {
     private static final Logger logger = LoggerFactory.getLogger(LutronIntegration.class);
@@ -48,7 +51,6 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     // 5 minutes
     private final long watchdogPeriod = 5 * 60 * 1000;
     private final long DEFAULT_WATCHDOG_BACKOFF_PERIOD = 5000;
-    private final long MAX_WATCHDOG_BACKOFF_PERIOD = 10 * 60 * 1000;
     private long currentWatchdogBackoffPeriod = DEFAULT_WATCHDOG_BACKOFF_PERIOD;
     private static final List<String> tags = List.of("LUTRON");
 
@@ -89,9 +91,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
 
     @Override
     public void telnetInputAvailable() {
-        new Thread(() -> {
-            processInput(readInput());
-        }).start();
+        new Thread(() -> processInput(readInput())).start();
     }
 
     private void processInput(String input) {
@@ -125,8 +125,8 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
                 if (startIndex >= 0 && endIndex > startIndex) {
                     input = input.substring(startIndex, endIndex);
                     String[] message = input.split(",");
-                    String integrationId = message[1];
-                    sendDeviceMessage(integrationId, input);
+                    String deviceId = message[1];
+                    sendEvent(new DeviceMessageEvent(deviceId, input));
                 }
             }
         }
@@ -164,6 +164,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
             throw new RuntimeException(e);
         }
         currentWatchdogBackoffPeriod = currentWatchdogBackoffPeriod * 2;
+        long MAX_WATCHDOG_BACKOFF_PERIOD = 10 * 60 * 1000;
         if (currentWatchdogBackoffPeriod > MAX_WATCHDOG_BACKOFF_PERIOD) {
             currentWatchdogBackoffPeriod = MAX_WATCHDOG_BACKOFF_PERIOD;
         }
@@ -214,8 +215,7 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
             if (instr.available() > 0) {
                 ret_read = instr.read(buff);
                 if (ret_read > 0) {
-                    String value = new String(buff, 0, ret_read);
-                    return value;
+                    return new String(buff, 0, ret_read);
                 }
             }
         } catch (final IOException e) {
@@ -249,13 +249,8 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
 
     @Override
     public Map<String, Object> getPreferencesLayout() {
-        return new PreferencesBuilder()
-                .withTextInput("bridgeAddress",
-                        "Lutron Bridge Address",
-                        "IP Address or URL for the Lutron bridge.",
-                        true,
-                        true)
-                .build();
+        return new PreferencesBuilder().withTextInput("bridgeAddress", "Lutron Bridge Address", "IP Address or URL for the Lutron bridge.", true,
+                true).build();
     }
 
     @Override
@@ -298,8 +293,8 @@ public class LutronIntegration extends DeviceIntegration implements TelnetInputL
     }
 
     @Override
-    public boolean removeIntegrationDevice(String deviceNetworkId, boolean force) {
-        return true;
+    public Future<Boolean> removeIntegrationDeviceAsync(String s, boolean b) {
+        return CompletableFuture.completedFuture(true);
     }
 
     @Override
